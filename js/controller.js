@@ -35,12 +35,13 @@ function render(){
   }
   if(current){
     show('play-view');
-    $('instruction').textContent=data.phase==='x'?'① よこに動かそう':data.phase==='z'?'② おくに動かそう':'つかめるかな…？';
+    $('instruction').textContent=data.phase==='free'?'自由に動かそう':data.phase==='x'?'① よこに動かそう':data.phase==='z'?'② おくに動かそう':'つかめるかな…？';
     $('remaining').textContent='のこり '+data.cur.left+' 回';
     const locked=sentTurn===data.turn+':'+data.phase;
     $('right').disabled=!navigator.onLine || data.phase!=='x' || locked;
     $('back').disabled=!navigator.onLine || data.phase!=='z' || locked;
     controls?.sync();
+    if(controls?.getMode()==='stick'&&data.phase==='x'&&sentTurn!==data.turn+':mode'){sentTurn=data.turn+':mode';sendStick(100);}
   }else if(position>=0 || !seen){
     show('wait');$('wait-position').textContent=position===0?'次はきみの番！':position>0?'前に '+position+' 人いるよ':'参加を受け付けています…';
   }else{
@@ -84,9 +85,15 @@ for(const [id,k] of [['right','x'],['back','z']]){
   button.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();release();}});
   button.addEventListener('contextmenu',e=>e.preventDefault());
 }
+let stickVector={x:0,z:0};
+function sendStick(code){if(!net||!data||data.cur?.id!==net.uid)return;net.setPlayer({ev:{n:++sequence,k:'x',down:true,dur:code,turn:data.turn}}).catch(error);}
+setInterval(()=>{if(controls?.getMode()==='stick'&&data?.phase==='free'&&(stickVector.x||stickVector.z))sendStick(101+(stickVector.x+1)+(stickVector.z+1)*3);},1000);
 controls=installControlSwitch({mount:$('controller-controls'),buttons:[$('right'),$('back')],
-  getState:()=>({phase:data?.phase,enabled:!!(net&&data&&data.cur?.id===net.uid&&navigator.onLine&&!stopped&&sentTurn!==data.turn+':'+data.phase&&(data.phase==='x'||data.phase==='z'))}),
+  getState:()=>({phase:data?.phase,enabled:!!(net&&data&&data.cur?.id===net.uid&&navigator.onLine&&!stopped&&sentTurn!==data.turn+':'+data.phase&&['x','z','free'].includes(data.phase))}),
   onDown:beginHold,onUp:release,
+  onMode:mode=>sendStick(mode==='stick'?100:111),
+  onVector:(x,z)=>{stickVector={x,z};sendStick(101+(x+1)+(z+1)*3);},
+  onGrab:()=>sendStick(110),
 });
 addEventListener('blur',release);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)release();});

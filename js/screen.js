@@ -192,6 +192,7 @@ const GUIDE = {
   x: '① 右へ動かして、よい位置で離そう',
   z: '② 奥へ動かして、よい位置で離そう',
   auto: 'つかめるかな…？',
+  free: 'スティックで動かして、つかむを押そう',
 };
 const gets = [];
 function renderHud() {
@@ -218,6 +219,7 @@ function renderHud() {
 const known = {};
 let cur=null,phase='idle',last=null,lastN=0,ax=null,phaseT=0,now=0;
 let net=null,queue=[],turn='',turnN=0,connecting=false,controls=null;
+let vector={x:0,z:0,t:0};
 const epoch=crypto.randomUUID();
 function roomState(){return {epoch,phase,turn,cur,queue:queue.map(id=>({id,name:known[id].name})),last,t:Date.now()};}
 function networkError(e){console.error(e);$('network-status').textContent='スマホ接続が止まっています。通信を確認して画面を読み込み直してください。';}
@@ -240,7 +242,7 @@ function onPlayers(players){
     }else{
       k.ping=p.ping;
       if(k.state==='done'&&p.join>k.join){Object.assign(k,{name:String(p.name).slice(0,8),join:p.join,n:p.ev.n,state:'queue'});queue.push(id);changed=true;}
-      if(p.ev.n>k.n){k.n=p.ev.n;if(cur?.id===id&&p.ev.turn===turn)input(p.ev.k,p.ev.down,p.ev.dur);}
+      if(p.ev.n>k.n){k.n=p.ev.n;if(cur?.id===id&&p.ev.turn===turn)(p.ev.k==='x'&&p.ev.down&&p.ev.dur>=100&&p.ev.dur<=112?stickCommand(p.ev.dur):input(p.ev.k,p.ev.down,p.ev.dur));}
     }
   }
   const previous=queue.length;queue=queue.filter(id=>{if(players[id])return true;known[id].state='done';return false;});if(queue.length!==previous)changed=true;
@@ -267,6 +269,15 @@ function endTurn() {
 }
 
 // スマホ（またはキーボード）からの入力。down=おした / up=はなした（dur=おしていたミリ秒）
+function stickCommand(code){
+  if(!cur||!['x','z','free'].includes(phase))return;
+  if(code===100){vector={x:0,z:0,t:now};phase='free';ax=null;phaseT=now;publish();return;}
+  if(code===111){if(phase!=='free')return;vector.x=vector.z=0;phase='x';ax={state:'wait'};phaseT=now;publish();return;}
+  if(phase!=='free'&&code>=101&&code<=110){phase='free';ax=null;phaseT=now;publish();}
+  if(phase!=='free')return;
+  if(code===110){vector.x=vector.z=0;phase='auto';publish();runAuto();return;}
+  if(code>=101&&code<=109){const n=code-101;vector={x:(n%3)-1,z:Math.floor(n/3)-1,t:now};}
+}
 function input(k, down, dur) {
   if (!cur || phase !== k || !ax) return;
   const pos = k === 'x' ? crane.x : crane.z;
@@ -281,6 +292,7 @@ function input(k, down, dur) {
 }
 
 function stepAxis(dt) {
+  if(phase==='free'){if(cur?.id==='kbd'&&(vector.x||vector.z))vector.t=now;if(now-vector.t>3){vector.x=vector.z=0;}const norm=Math.hypot(vector.x,vector.z)||1;crane.x=Math.max(HOME.x,Math.min(LIM.x,crane.x+vector.x/norm*SPEED*dt));crane.z=Math.max(LIM.z,Math.min(HOME.z,crane.z+vector.z/norm*SPEED*dt));return;}
   if (phase !== 'x' && phase !== 'z') return;
   const k = phase, dir = k === 'x' ? 1 : -1, lim = LIM[k];
   let pos = k === 'x' ? crane.x : crane.z;
@@ -441,7 +453,7 @@ $('fullscreen').addEventListener('click',async()=>{try{await(document.fullscreen
 $('play').addEventListener('click',()=>{
   if(phase!=='idle'||queue.length)return;
   known.kbd={name:'プレイヤー',n:0,join:0,state:'play'};
-  cur={id:'kbd',name:'プレイヤー',left:1};startPlay(true);
+  cur={id:'kbd',name:'プレイヤー',left:1};startPlay(true);if(controls?.getMode()==='stick')stickCommand(100);
 });
 for(const [id,k] of [['move-x','x'],['move-z','z']]){
   const button=$(id);let held=false;
@@ -453,7 +465,10 @@ for(const [id,k] of [['move-x','x'],['move-z','z']]){
 }
 addEventListener('blur',()=>{if(cur?.id==='kbd'&&(phase==='x'||phase==='z'))input(phase,false,null);setHum(false);});
 controls=installControlSwitch({mount:$('screen-controls'),buttons:[$('move-x'),$('move-z')],
-  getState:()=>({phase,enabled:cur?.id==='kbd'&&(phase==='x'||phase==='z')}),
+  getState:()=>({phase,enabled:cur?.id==='kbd'&&['x','z','free'].includes(phase)}),
+  onMode:mode=>{if(cur?.id==='kbd')stickCommand(mode==='stick'?100:111);},
+  onVector:(x,z)=>{if(cur?.id==='kbd'){if(phase!=='free')stickCommand(100);stickCommand(101+(x+1)+(z+1)*3);}},
+  onGrab:()=>{if(cur?.id==='kbd')stickCommand(110);},
   onDown:k=>{if(cur?.id!=='kbd'||phase!==k)return false;press(k);return true;},
   onUp:k=>{if(cur?.id==='kbd')input(k,false,null);},
 });
