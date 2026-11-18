@@ -3,29 +3,24 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#742324">
-<title>はっちーのクレーンパーク</title>
+<title>はっちークレーン</title>
 <link rel="stylesheet" href="styles.css">
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 </head>
 <body>
-<header><a class="brand" href="./"><span class="brand-icon">H</span><span>HACCHI <b>CRANE PARK</b><small>はっちーのクレーンパーク</small></span></a><div class="header-right"><span class="live">● FREE PLAY</span><button id="sound" aria-label="音を切り替え" aria-pressed="false">音 OFF</button><button id="fullscreen" aria-label="全画面表示">全画面 ↗</button></div></header>
+<header><a class="brand" href="./"><span class="brand-icon">H</span><span>はっちークレーン</span></a><div class="header-right"><button id="sound" aria-label="音を切り替え" aria-pressed="false">音 OFF</button><button id="fullscreen" aria-label="全画面表示">全画面 ↗</button></div></header>
 <main>
 <section class="arcade" aria-label="クレーンゲーム">
-<div class="marquee"><span>★ ★ ★</span><div>はっちーを、つかまえよう！<small>HACCHI COLLECTION · ALL 4 TYPES</small></div><span>★ ★ ★</span></div>
-<div id="stage"><canvas id="gl" aria-label="はっちーの3Dクレーンゲーム"></canvas><div class="stage-label">HACCHI CATCHER <span>01</span></div><div class="stage-hint">◎ 足もとのリングを景品に合わせよう</div><div id="banner" role="status" aria-live="polite"></div><div id="err" role="alert"></div></div>
-<div class="console"><div class="guide"><span class="label">HOW TO PLAY</span><div id="guide">「あそぶ」を押してスタート</div><small>長押しで動かして、離すとストップ</small></div><div class="buttons"><button id="play">あそぶ <span>▶</span></button><button id="move-x" class="move" aria-label="右に移動">① <b>→</b><small>よこ</small></button><button id="move-z" class="move" aria-label="奥に移動">② <b>↑</b><small>おく</small></button></div><div id="screen-controls" class="screen-controls"></div></div>
-<div class="machine-bottom"><span>HACCHI INDUSTRIAL ARCADE</span><span>PLAY · CATCH · COLLECT</span></div>
+<div id="stage"><canvas id="gl" aria-label="はっちーの3Dクレーンゲーム"></canvas><div id="banner" role="status" aria-live="polite"></div><div id="err" role="alert"></div></div>
+<div class="console"><div class="guide"><div id="guide">スマホでQRを読み取って参加してね</div></div><details class="local-controls"><summary>この端末で操作</summary><div class="buttons"><button id="play">この端末であそぶ ▶</button><button id="move-x" class="move" aria-label="右に移動">① <b>→</b><small>よこ</small></button><button id="move-z" class="move" aria-label="奥に移動">② <b>↑</b><small>おく</small></button></div><div id="screen-controls" class="screen-controls"></div></details></div>
 </section>
 <aside id="panel">
-<section class="intro"><span class="eyebrow">WELCOME TO THE PARK</span><h1>めざせ、<br>はっちーコンプリート。</h1><p>4つの学科・コースのはっちーが集合。<br>お気に入りの子をねらってね！</p><span class="mode">この端末であそべます</span></section>
-<section class="phone-card"><span class="eyebrow">PLAY TOGETHER</span><h2>スマホがコントローラーに。</h2><p id="network-status" role="status">スクリーンにこの画面を映して、部屋を開こう。</p><button id="open-room">スマホ参加用の部屋を開く ↗</button><div id="room-info" hidden><div id="qr"></div><strong id="room-code"></strong><a id="controller-link" target="_blank" rel="noopener">コントローラーを開く ↗</a><button id="copy-link">参加リンクをコピー</button><p>QRをスマホで読み取って参加！<br>参加者は1人2回ずつ遊べます。</p></div></section>
-<section class="status-card"><div><span class="label">NOW PLAYING</span><strong id="now">スタンバイ</strong><span id="left">何回でもチャレンジ！</span></div><span class="status-star">✦</span></section>
-<section id="queue-card" class="queue-card" hidden><div class="section-heading"><h2>順番待ち</h2><span id="queue-count">0 人</span></div><ol id="queue"></ol></section>
-<section class="collection-card"><div class="section-heading"><h2>はっちーコレクション</h2><span id="collection-count">0 / 4</span></div><div id="collection"></div><p class="collection-note">ゲットするとカードが光るよ</p><div id="gets" aria-label="獲得した景品"></div></section>
-<details class="setup"><summary>はっちー画像を選ぶ</summary><p>4枚の画像をまとめて選択してください。ファイル名に「電気科」「機械科」「環境化学」「電力管理」があると自動で割り当てます。画像は送信・保存されず、この画面内だけで使います。</p><input id="image-files" type="file" accept="image/png,image/webp,image/jpeg" multiple><p id="image-status" role="status">未選択：学科バッジで表示中</p></details>
-<p class="footer-note">PC：→ と ↑ の長押しでも操作できます<br>通信：はっちー専用Firebase・ニックネームで参加</p>
+<section class="phone-card"><h2>QRで参加</h2><p id="network-status" role="status">QRを準備しています…</p><button id="open-room" hidden>もう一度つなぐ</button><div id="room-info" hidden><div id="qr" role="img" aria-label="スマホ参加用QRコード"></div><strong id="room-code"></strong><a id="controller-link" target="_blank" rel="noopener">スマホの操作画面 ↗</a><button id="copy-link">参加リンクをコピー</button></div></section>
+<section class="status-card"><div><span class="label">あそんでいる人</span><strong id="now">スタンバイ</strong><span id="left">1人2回</span></div></section>
+<section id="queue-card" class="queue-card"><div class="section-heading"><h2>順番待ち</h2><span id="queue-count">0 人</span></div><ol id="queue"></ol></section>
+<section class="collection-card"><div class="section-heading"><h2>獲得したはっちー</h2><span id="collection-count">0 / 4</span></div><div id="collection"></div><div id="gets" aria-label="獲得した景品"></div></section>
+<details class="setup"><summary>はっちー画像を選ぶ</summary><p>4枚まとめて選べます。画像はこの端末だけで使い、送信されません。</p><input id="image-files" type="file" accept="image/png,image/webp,image/jpeg" multiple><p id="image-status" role="status">未選択</p></details>
 </aside>
 </main>
-<dialog id="welcome"><span class="eyebrow">HACCHI CRANE PARK</span><h2>今日のねらいは、<br>どのはっちー？</h2><p>① よこに動かす → ② おくに動かす<br>ボタンを離すとクレーンがつかみにいくよ。</p><button id="start">パークへ入る →</button><small>無料で何回でもあそべます・音は初期設定でOFF</small></dialog>
 <script type="module" src="js/screen.js"></script>
 </body></html>

@@ -9,7 +9,7 @@ let net=null,data=null,joined=false,seen=false,busy=false,holding=null,sentTurn=
 const collection=read(localStorage,'hachi-collection',[]);
 let lastSeen=read(sessionStorage,'hachi-result-'+room,'');
 const sessionKey='hachi-joined-'+room;
-$('room-label').textContent=room?'ROOM '+room:'';
+$('room-label').textContent=room?'部屋 '+room:'';
 $('name').value=read(localStorage,'hachi-name','');
 function error(e){console.error(e);$('connection-message').textContent='接続できませんでした。通信を確認して「もう一度つなぐ」を押してください。';stopped=true;show('unavailable');$('right').disabled=$('back').disabled=true;}
 function render(){

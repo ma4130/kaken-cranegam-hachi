@@ -221,7 +221,7 @@ function confetti() {
 }
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const GUIDE = {
-  idle: '「あそぶ」でチャレンジ！',
+  idle: 'スマホでQRを読み取って参加してね',
   x: '① 右へ動かして、よい位置で離そう',
   z: '② 奥へ動かして、よい位置で離そう',
   auto: 'つかめるかな…？',
@@ -230,12 +230,12 @@ const gets = [];
 function renderHud() {
   $('guide').textContent = GUIDE[phase];
   $('now').textContent = cur ? `${cur.name} さん` : 'スタンバイ';
-  $('left').textContent = cur ? `のこり ${cur.left} かい` : '何回でもチャレンジ！';
+  $('left').textContent = cur ? `のこり ${cur.left} かい` : '1人2回';
   $('gets').textContent = gets.length ? `これまで ${gets.length} 個ゲット！` : '';
   $('play').disabled = phase !== 'idle' || queue.length > 0;
   $('move-x').disabled = phase !== 'x' || cur?.id !== 'kbd';
   $('move-z').disabled = phase !== 'z' || cur?.id !== 'kbd';
-  $('play').textContent = gets.length ? 'もう一度 ▶' : 'あそぶ ▶';
+  $('play').textContent = gets.length ? 'もう一度 ▶' : 'この端末であそぶ ▶';
   controls?.sync();
   $('queue-count').textContent=queue.length+' 人';
   $('queue').replaceChildren(...queue.slice(0,8).map((id,index)=>{
@@ -435,6 +435,7 @@ function resize() {
   renderer.setSize(w,h,false);camera.clearViewOffset();camera.aspect=w/h;camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
+new ResizeObserver(resize).observe($('stage'));
 
 let prev = performance.now(), manual = false;
 function update(dt) {
@@ -460,8 +461,6 @@ fillPrizes(false);
 renderHud();
 requestAnimationFrame(frame);
 
-$('welcome').showModal();
-$('start').addEventListener('click',()=>{$('welcome').close();});
 let muted=true;
 $('sound').addEventListener('click',async()=>{
   try{
@@ -490,27 +489,29 @@ controls=installControlSwitch({mount:$('screen-controls'),buttons:[$('move-x'),$
   onDown:k=>{if(cur?.id!=='kbd'||phase!==k)return false;press(k);return true;},
   onUp:k=>{if(cur?.id==='kbd')input(k,false,null);},
 });
-$('open-room').addEventListener('click',async()=>{
+async function openRoom(){
   if(connecting||net)return;
-  connecting=true;$('open-room').disabled=true;$('network-status').textContent='参加用の部屋を準備しています…';
+  connecting=true;$('open-room').disabled=true;$('network-status').textContent='QRを準備しています…';
   try{
     const bytes=crypto.getRandomValues(new Uint8Array(8));
     const room=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
     const connection=await connectRoom(room,'screen',networkError);
     await connection.create(roomState());net=connection;net.onPlayers(onPlayers);
     const url=new URL('controller.html',location.href);url.searchParams.set('room',room);
-    $('controller-link').href=url.href;$('room-code').textContent='ROOM '+room;
+    $('controller-link').href=url.href;$('room-code').textContent='部屋 '+room;
     const {default:qrcode}=await import('./vendor/qrcode.js');
     const qr=qrcode(0,'M');qr.addData(url.href);qr.make();$('qr').innerHTML=qr.createSvgTag({cellSize:4,margin:0,scalable:true});
     $('room-info').hidden=false;$('queue-card').hidden=false;$('open-room').hidden=true;
-    $('network-status').textContent='受付中 · QRからスマホで参加できます';
+    $('network-status').textContent='スマホで読み取ってね · 1人2回';
     $('copy-link').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(url.href);$('copy-link').textContent='コピーしました ✓';}catch{$('network-status').textContent='参加リンクを長押ししてコピーしてください';}});
     setInterval(()=>{if(net)publish();},60000);
     addEventListener('offline',()=>{$('network-status').textContent='通信が切れています。接続が戻るまでお待ちください。';});
-    addEventListener('online',()=>{$('network-status').textContent='受付中 · QRからスマホで参加できます';publish();});
-  }catch(e){networkError(e);$('open-room').disabled=false;}
+    addEventListener('online',()=>{$('network-status').textContent='スマホで読み取ってね · 1人2回';publish();});
+  }catch(e){networkError(e);$('open-room').hidden=false;$('open-room').disabled=false;}
   finally{connecting=false;}
-});
+}
+$('open-room').addEventListener('click',openRoom);
+openRoom();
 
 if (TEST) window.__crane = {
   get state() { return { phase, cur, crane: { ...crane }, last, prizes: prizes.map((p) => ({ name: p.def.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: p.r })) }; },
