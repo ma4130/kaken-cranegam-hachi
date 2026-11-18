@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    match /hachi_rooms/{room} {
+      function host() { return signedIn() && resource.data.ownerUid == request.auth.uid; }
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt < request.time + duration.value(1, 'd')
+        && request.resource.data.queue is list && request.resource.data.queue.size() <= 100;
+      allow update: if host()
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.expiresAt == resource.data.expiresAt
+        && resource.data.expiresAt > request.time
+        && request.resource.data.queue is list && request.resource.data.queue.size() <= 100;
+      allow delete: if host();
+      match /players/{player} {
+        function parent() { return get(/databases/$(database)/documents/hachi_rooms/$(room)).data; }
+        function isHost() { return signedIn() && parent().ownerUid == request.auth.uid; }
+        function valid() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['name','epoch','join','ping','ev'])
+            && d.name is string && d.name.size() > 0 && d.name.size() <= 8
+            && d.epoch == parent().epoch && parent().expiresAt > request.time
+            && d.join is int && d.ping is int
+            && d.ev.keys().hasOnly(['n','k','down','dur','turn'])
+            && d.ev.n is int && d.ev.n >= 0
+            && d.ev.k in ['x','z'] && d.ev.down is bool
+            && d.ev.dur is int && d.ev.dur >= 0 && d.ev.dur <= 10000
+            && d.ev.turn is string && d.ev.turn.size() <= 100;
+        }
+        allow get: if signedIn() && (request.auth.uid == player || isHost());
+        allow list: if isHost();
+        allow create, update: if signedIn() && request.auth.uid == player && valid();
+        allow delete: if signedIn() && (request.auth.uid == player || isHost());
+      }
+    }
+  }
+}

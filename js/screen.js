@@ -1,5 +1,7 @@
-// はっちーの3Dクレーンゲーム。端末内のみで動作（データベース未接続）。
+// はっちー専用Firebaseでスマホ操作できる3Dクレーンゲーム。
 import * as THREE from 'three';
+import { connectRoom } from './net.js';
+import { installControlSwitch } from './controls.js';
 
 
 const qs = new URLSearchParams(location.search);
@@ -220,8 +222,8 @@ function confetti() {
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const GUIDE = {
   idle: '「あそぶ」でチャレンジ！',
-  x: '① 「→」ボタンを おしている あいだ、よこに うごくよ',
-  z: '② 「↑」ボタンを おしている あいだ、おくに うごくよ',
+  x: '① 右へ動かして、よい位置で離そう',
+  z: '② 奥へ動かして、よい位置で離そう',
   auto: 'つかめるかな…？',
 };
 const gets = [];
@@ -230,27 +232,71 @@ function renderHud() {
   $('now').textContent = cur ? `${cur.name} さん` : 'スタンバイ';
   $('left').textContent = cur ? `のこり ${cur.left} かい` : '何回でもチャレンジ！';
   $('gets').textContent = gets.length ? `これまで ${gets.length} 個ゲット！` : '';
-  $('play').disabled = phase !== 'idle';
-  $('move-x').disabled = phase !== 'x';
-  $('move-z').disabled = phase !== 'z';
+  $('play').disabled = phase !== 'idle' || queue.length > 0;
+  $('move-x').disabled = phase !== 'x' || cur?.id !== 'kbd';
+  $('move-z').disabled = phase !== 'z' || cur?.id !== 'kbd';
   $('play').textContent = gets.length ? 'もう一度 ▶' : 'あそぶ ▶';
+  controls?.sync();
+  $('queue-count').textContent=queue.length+' 人';
+  $('queue').replaceChildren(...queue.slice(0,8).map((id,index)=>{
+    const li=document.createElement('li'),b=document.createElement('b');b.textContent=index+1;
+    li.append(b,known[id].name+' さん');return li;
+  }));
+  if(!queue.length){const li=document.createElement('li');li.textContent='待っている人はいません';$('queue').append(li);}
+
 
 }
 
 // ---------- ゲームの進行 ----------
 const known = {};
 let cur=null,phase='idle',last=null,lastN=0,ax=null,phaseT=0,now=0;
-function publish(){renderHud();}
+let net=null,queue=[],turn='',turnN=0,connecting=false,controls=null;
+const epoch=crypto.randomUUID();
+function roomState(){return {epoch,phase,turn,cur,queue:queue.map(id=>({id,name:known[id].name})),last,t:Date.now()};}
+function networkError(e){console.error(e);$('network-status').textContent='スマホ接続が止まっています。通信を確認して画面を読み込み直してください。';}
+function publish(){renderHud();net?.setRoom(roomState()).catch(networkError);}
+function nextTurn(){
+  if(cur||phase!=='idle')return;
+  const previous=queue.length;
+  queue=queue.filter(id=>{if(known[id]&&Date.now()-known[id].ping<180000)return true;if(known[id])known[id].state='done';return false;});
+  if(!queue.length){if(previous)publish();else renderHud();return;}
+  const id=queue.shift();known[id].state='play';cur={id,name:known[id].name,left:2};startPlay(true);
+}
+function onPlayers(players){
+  let changed=false;
+  for(const [id,p] of Object.entries(players)){
+    if(p.epoch!==epoch){net.removePlayer(id).catch(networkError);continue;}
+    let k=known[id];
+    if(!k){
+      if(queue.length>=100){net.removePlayer(id).catch(networkError);continue;}
+      k=known[id]={name:String(p.name).slice(0,8),n:p.ev.n,join:p.join,ping:p.ping,state:'queue'};queue.push(id);changed=true;
+    }else{
+      k.ping=p.ping;
+      if(k.state==='done'&&p.join>k.join){Object.assign(k,{name:String(p.name).slice(0,8),join:p.join,n:p.ev.n,state:'queue'});queue.push(id);changed=true;}
+      if(p.ev.n>k.n){k.n=p.ev.n;if(cur?.id===id&&p.ev.turn===turn)input(p.ev.k,p.ev.down,p.ev.dur);}
+    }
+  }
+  const previous=queue.length;queue=queue.filter(id=>{if(players[id])return true;known[id].state='done';return false;});if(queue.length!==previous)changed=true;
+  if(cur && cur.id!=='kbd' && !players[cur.id] && phase!=='auto'){
+    const x=crane.x,z=crane.z;phase='auto';ax=null;setHum(false);publish();
+    tween(.8,k=>{crane.x=x+(HOME.x-x)*k;crane.z=z+(HOME.z-z)*k;}).then(endTurn);
+    return;
+  }
+  if(changed){publish();nextTurn();}
+}
+
 function startPlay(first) {
+  turn=epoch+':'+(++turnN);
+  crane.x=HOME.x;crane.z=HOME.z;
   phase = 'x'; ax = { state: 'wait' }; phaseT = now;
-  banner(first ? `${esc(cur.name)} さんの ばん！<small>① → ボタンを ながおし</small>` : `もう いっかい！<small>のこり ${cur.left} かい</small>`, 1700);
+  banner(first ? `${esc(cur.name)} さんの ばん！<small>① 右へ動かそう</small>` : `もう いっかい！<small>のこり ${cur.left} かい</small>`, 1700);
   beep(660, .1); beep(880, .15, 'square', .08, .12);
   publish();
 }
 function endTurn() {
   if (cur && known[cur.id]) known[cur.id].state = 'done';
   cur = null; phase = 'idle'; ax = null; setHum(false);
-  publish();
+  publish(); nextTurn();
 }
 
 // スマホ（またはキーボード）からの入力。down=おした / up=はなした（dur=おしていたミリ秒）
@@ -374,13 +420,13 @@ addEventListener('keydown', (e) => {
   const k = KEYS[e.key]; if (!k || e.repeat) return;
   e.preventDefault(); press(k);
 });
-addEventListener('keyup', (e) => { const k = KEYS[e.key]; if (k) input(k, false, null); });
+addEventListener('keyup', (e) => { const k = KEYS[e.key]; if (k&&cur?.id==='kbd') input(k, false, null); });
 function press(k) {
-  if (!cur && phase === 'idle' && k === 'x') {
+  if (!cur && phase === 'idle' && !queue.length && k === 'x') {
     known.kbd = { name: 'プレイヤー', n: 0, join: 0, state: 'play' };
     cur = { id: 'kbd', name: 'プレイヤー', left: 1 }; startPlay(true);
   }
-  input(k, true);
+  if(cur?.id==='kbd')input(k, true);
 }
 
 // ---------- ループ ----------
@@ -426,7 +472,7 @@ $('sound').addEventListener('click',async()=>{
 });
 $('fullscreen').addEventListener('click',async()=>{try{await(document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen());}catch{}});
 $('play').addEventListener('click',()=>{
-  if(phase!=='idle')return;
+  if(phase!=='idle'||queue.length)return;
   known.kbd={name:'プレイヤー',n:0,join:0,state:'play'};
   cur={id:'kbd',name:'プレイヤー',left:1};startPlay(true);
 });
@@ -438,8 +484,33 @@ for(const [id,k] of [['move-x','x'],['move-z','z']]){
   button.addEventListener('keydown',e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();held=true;press(k);}});
   button.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();release();}});
 }
-addEventListener('blur',()=>{if(phase==='x'||phase==='z')input(phase,false,null);setHum(false);});
-// ネットワーク通信は未実装。データベース決定後に接続します。
+addEventListener('blur',()=>{if(cur?.id==='kbd'&&(phase==='x'||phase==='z'))input(phase,false,null);setHum(false);});
+controls=installControlSwitch({mount:$('screen-controls'),buttons:[$('move-x'),$('move-z')],
+  getState:()=>({phase,enabled:cur?.id==='kbd'&&(phase==='x'||phase==='z')}),
+  onDown:k=>{if(cur?.id!=='kbd'||phase!==k)return false;press(k);return true;},
+  onUp:k=>{if(cur?.id==='kbd')input(k,false,null);},
+});
+$('open-room').addEventListener('click',async()=>{
+  if(connecting||net)return;
+  connecting=true;$('open-room').disabled=true;$('network-status').textContent='参加用の部屋を準備しています…';
+  try{
+    const bytes=crypto.getRandomValues(new Uint8Array(8));
+    const room=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
+    const connection=await connectRoom(room,'screen',networkError);
+    await connection.create(roomState());net=connection;net.onPlayers(onPlayers);
+    const url=new URL('controller.html',location.href);url.searchParams.set('room',room);
+    $('controller-link').href=url.href;$('room-code').textContent='ROOM '+room;
+    const {default:qrcode}=await import('./vendor/qrcode.js');
+    const qr=qrcode(0,'M');qr.addData(url.href);qr.make();$('qr').innerHTML=qr.createSvgTag({cellSize:4,margin:0,scalable:true});
+    $('room-info').hidden=false;$('queue-card').hidden=false;$('open-room').hidden=true;
+    $('network-status').textContent='受付中 · QRからスマホで参加できます';
+    $('copy-link').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(url.href);$('copy-link').textContent='コピーしました ✓';}catch{$('network-status').textContent='参加リンクを長押ししてコピーしてください';}});
+    setInterval(()=>{if(net)publish();},60000);
+    addEventListener('offline',()=>{$('network-status').textContent='通信が切れています。接続が戻るまでお待ちください。';});
+    addEventListener('online',()=>{$('network-status').textContent='受付中 · QRからスマホで参加できます';publish();});
+  }catch(e){networkError(e);$('open-room').disabled=false;}
+  finally{connecting=false;}
+});
 
 if (TEST) window.__crane = {
   get state() { return { phase, cur, crane: { ...crane }, last, prizes: prizes.map((p) => ({ name: p.def.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: p.r })) }; },
