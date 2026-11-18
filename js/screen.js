@@ -2,10 +2,12 @@
 import * as THREE from 'three';
 import { connectRoom } from './net.js';
 import { installControlSwitch } from './controls.js';
+import { buildHacchi, makeHacchiThumbnails } from './hacchi.js';
 
 
 const qs = new URLSearchParams(location.search);
 const TEST = qs.has('test');
+const MODEL_PREVIEW = qs.has('models');
 const PRIZE_COUNT = 12;
 const $ = (id) => document.getElementById(id);
 
@@ -103,58 +105,23 @@ function placeCrane() {
 
 // ---------- 景品 ----------
 const PRIZES = [
-  {name:'電気科', key:'電気科', mark:'電', color:'#a84739', emoji:'電気科', s:.9},
-  {name:'機械科', key:'機械科', mark:'機', color:'#567f83', emoji:'機械科', s:.9},
-  {name:'環境化学コース', key:'環境化学', mark:'化', color:'#76824a', emoji:'環境化学', s:.9},
-  {name:'電力管理コース', key:'電力管理', mark:'力', color:'#ad8438', emoji:'電力管理', s:.9},
+  {name:'電気科', kind:'electric', key:'電気科', mark:'電', color:'#a84739', emoji:'電気科', s:.9},
+  {name:'機械科', kind:'mechanical', key:'機械科', mark:'機', color:'#567f83', emoji:'機械科', s:.9},
+  {name:'環境化学コース', kind:'chemical', key:'環境化学', mark:'化', color:'#76824a', emoji:'環境化学', s:.9},
+  {name:'電力管理コース', kind:'power', key:'電力管理', mark:'力', color:'#ad8438', emoji:'電力管理', s:.9},
 ];
 const caught = new Set();
-const localImages = new Map();
-function badgeTexture(d) {
-  return canvasTex(256,320,(g,w,h)=>{
-    g.fillStyle='#fff8e9';g.beginPath();g.roundRect(15,12,226,296,45);g.fill();
-    g.strokeStyle=d.color;g.lineWidth=9;g.stroke();
-    g.fillStyle=d.color;g.beginPath();g.moveTo(128,38);g.lineTo(211,83);g.lineTo(211,182);g.lineTo(128,227);g.lineTo(45,182);g.lineTo(45,83);g.closePath();g.fill();
-    g.textAlign='center';g.fillStyle='#fff5cd';g.font='900 88px sans-serif';g.fillText(d.mark,128,167);
-    g.fillStyle=d.color;g.font='bold 21px sans-serif';g.fillText('HACCHI',128,273);
-  });
-}
-PRIZES.forEach(d=>{ d.texture=badgeTexture(d); });
+const thumbnails=makeHacchiThumbnails(PRIZES.map(d=>d.kind));
 function renderCollection(){
   $('collection-count').textContent=`${caught.size} / 4`;
   $('collection').replaceChildren(...PRIZES.map(d=>{
     const card=document.createElement('div');card.className='prize-card'+(caught.has(d.key)?' caught':'');
-    if(localImages.has(d.key)){const img=document.createElement('img');img.src=localImages.get(d.key);img.alt=d.name+'のはっちー';card.append(img);}
-    else {const badge=document.createElement('div');badge.className='badge';badge.style.setProperty('--badge',d.color);badge.textContent=d.mark;card.append(badge);}
+    const img=document.createElement('img');img.src=thumbnails.get(d.kind);img.alt=d.name+'の3Dはっちー';card.append(img);
     const label=document.createElement('span');label.textContent=d.name;card.append(label);return card;
   }));
 }
-function sizeSprite(sprite,texture){
-  const ratio=texture.image.width/texture.image.height;
-  const height=Math.min(2.25,1.9/ratio);sprite.scale.set(height*ratio,height,1);
-}
-function buildPrize(d) {
-  const g=new THREE.Group();
-  const base=new THREE.Mesh(new THREE.CylinderGeometry(.63,.7,.18,32),mat(0xfff4dc));base.position.y=.09;base.castShadow=true;g.add(base);
-  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:d.texture,transparent:true,depthWrite:false}));
-  sprite.position.y=1.22;sizeSprite(sprite,d.texture);g.add(sprite);
-  g.userData={r:.65,h:2.4,sprite};return g;
-}
-$('image-files').addEventListener('change',async(e)=>{
-  let count=0;const errors=[];
-  for(const file of e.target.files){
-    const d=PRIZES.find(d=>file.name.includes(d.key));if(!d)continue;
-    if(file.size>10*1024*1024){errors.push(file.name+' は10MB以下にしてください');continue;}
-    const url=URL.createObjectURL(file);
-    try {
-      const texture=await new THREE.TextureLoader().loadAsync(url);texture.colorSpace=THREE.SRGBColorSpace;
-      const old=d.texture;d.texture=texture;
-      for(const p of prizes.filter(p=>p.def===d)){p.mesh.userData.sprite.material.map=texture;p.mesh.userData.sprite.material.needsUpdate=true;sizeSprite(p.mesh.userData.sprite,texture);}
-      old.dispose();const oldUrl=localImages.get(d.key);if(oldUrl)URL.revokeObjectURL(oldUrl);localImages.set(d.key,url);count++;
-    }catch{URL.revokeObjectURL(url);errors.push(file.name+' を読み込めませんでした');}
-  }
-  renderCollection();$('image-status').textContent=`${localImages.size} / 4 種類を設定済み。`+(count?' この画面だけで使用中。':' ファイル名を確認してください。')+errors.join(' / ');
-});
+let poseIndex=0;
+function buildPrize(d){return buildHacchi(d.kind,{pose:poseIndex++ % 3});}
 renderCollection();
 
 let prizes = [];   // {def, mesh, x, z, r}
@@ -340,6 +307,7 @@ function stepAxis(dt) {
 }
 
 async function dropPrize(p) {
+  p.mesh.rotation.z=0;
   const win = inChute(p.x, p.z);
   const y0 = p.mesh.position.y, y1 = win ? -2.5 : 0;
   await tween(Math.sqrt(Math.max(.1, y0 - y1)) * .28, (k) => {
@@ -375,7 +343,7 @@ async function runAuto() {
   await tween(.5, (k) => { crane.open = 1 - k * (target ? .55 : 1); });
   beep(700, .08);
   let held = target, dropping = null;
-  const carry = () => { if (held) { held.x = crane.x; held.z = crane.z; held.mesh.position.set(crane.x, crane.y - CARRY, crane.z); } };
+  const carry = () => { if (held) { held.x = crane.x; held.z = crane.z; held.mesh.position.set(crane.x, crane.y - CARRY, crane.z); held.mesh.rotation.z=Math.sin(now*5)*.065; } };
   const release = () => { if (!held) return; const p = held; held = null; dropping = dropPrize(p); tween(.3, (k) => { crane.open = .45 + .55 * k; }); };
   if (held) await tween(.25, (k) => { held.mesh.position.x += (crane.x - held.mesh.position.x) * k; held.mesh.position.z += (crane.z - held.mesh.position.z) * k; });
   const weak = q < .15, secure = q >= .55;
@@ -511,7 +479,7 @@ async function openRoom(){
   finally{connecting=false;}
 }
 $('open-room').addEventListener('click',openRoom);
-openRoom();
+if(!MODEL_PREVIEW)openRoom();
 
 if (TEST) window.__crane = {
   get state() { return { phase, cur, crane: { ...crane }, last, prizes: prizes.map((p) => ({ name: p.def.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: p.r })) }; },
