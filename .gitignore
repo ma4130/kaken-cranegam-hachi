@@ -1,0 +1,8 @@
+assets/local/
+*.png
+*.webp
+*.jpg
+*.jpeg
+prepare.py
+node_modules/
+test-results/
