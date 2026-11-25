@@ -201,8 +201,6 @@ function renderHud() {
   $('left').textContent = cur ? `のこり ${cur.left} かい` : '1人2回';
   $('gets').textContent = gets.length ? `これまで ${gets.length} 個ゲット！` : '';
   $('play').disabled = phase !== 'idle' || queue.length > 0;
-  $('move-x').disabled = phase !== 'x' || cur?.id !== 'kbd';
-  $('move-z').disabled = phase !== 'z' || cur?.id !== 'kbd';
   $('play').textContent = gets.length ? 'もう一度 ▶' : 'この端末であそぶ ▶';
   controls?.sync();
   $('queue-count').textContent=queue.length+' 人';
@@ -257,8 +255,8 @@ function onPlayers(players){
 function startPlay(first) {
   turn=epoch+':'+(++turnN);
   crane.x=HOME.x;crane.z=HOME.z;
-  phase = 'x'; ax = { state: 'wait' }; phaseT = now;
-  banner(first ? `${esc(cur.name)} さんの ばん！<small>① 右へ動かそう</small>` : `もう いっかい！<small>のこり ${cur.left} かい</small>`, 1700);
+  phase = 'free'; ax = null; vector={x:0,z:0,t:now}; phaseT = now;
+  banner(first ? `${esc(cur.name)} さんの ばん！<small>スティックで動かそう</small>` : `もう いっかい！<small>のこり ${cur.left} かい</small>`, 1700);
   beep(660, .1); beep(880, .15, 'square', .08, .12);
   publish();
 }
@@ -393,26 +391,17 @@ async function runAuto() {
   if (player.left > 0) startPlay(false); else endTurn();
 }
 
-// キーボードでも遊べる（→ と ↑）。だれも いないときは「キーボード」さんとして始まる
-const KEYS = { ArrowRight: 'x', ArrowUp: 'z' };
-addEventListener('keydown', (e) => {
-  if (e.key === 'f' || e.key === 'F') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); return; }
-  const k = KEYS[e.key]; if (!k || e.repeat) return;
-  e.preventDefault(); press(k);
-});
-addEventListener('keyup', (e) => { const k = KEYS[e.key]; if (k&&cur?.id==='kbd') input(k, false, null); });
-function press(k) {
-  if (!cur && phase === 'idle' && !queue.length && k === 'x') {
-    known.kbd = { name: 'プレイヤー', n: 0, join: 0, state: 'play' };
-    cur = { id: 'kbd', name: 'プレイヤー', left: 1 }; startPlay(true);
-  }
-  if(cur?.id==='kbd')input(k, true);
-}
+// キーボードの矢印でもスティックと同じように操作できる。
+const heldKeys=new Set();
+function moveKeys(){if(cur?.id!=='kbd'||phase!=='free')return;const x=Number(heldKeys.has('ArrowRight'))-Number(heldKeys.has('ArrowLeft'));const z=Number(heldKeys.has('ArrowDown'))-Number(heldKeys.has('ArrowUp'));stickCommand(101+(x+1)+(z+1)*3);}
+addEventListener('keydown',e=>{if(e.target.closest?.('input,button,textarea'))return;if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();return;}if(!e.key.startsWith('Arrow'))return;e.preventDefault();heldKeys.add(e.key);moveKeys();});
+addEventListener('keyup',e=>{if(!e.key.startsWith('Arrow'))return;heldKeys.delete(e.key);moveKeys();});
+addEventListener('blur',()=>{heldKeys.clear();moveKeys();});
 
 // ---------- ループ ----------
 function resize() {
   const w=$('stage').clientWidth,h=$('stage').clientHeight;
-  renderer.setSize(w,h,false);camera.clearViewOffset();camera.aspect=w/h;camera.updateProjectionMatrix();
+  renderer.setSize(w,h,false);camera.clearViewOffset();camera.aspect=w/h;camera.zoom=camera.aspect<1.2?1.08:1.2;camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
 new ResizeObserver(resize).observe($('stage'));
@@ -453,24 +442,14 @@ $('fullscreen').addEventListener('click',async()=>{try{await(document.fullscreen
 $('play').addEventListener('click',()=>{
   if(phase!=='idle'||queue.length)return;
   known.kbd={name:'プレイヤー',n:0,join:0,state:'play'};
-  cur={id:'kbd',name:'プレイヤー',left:1};startPlay(true);if(controls?.getMode()==='stick')stickCommand(100);
+  cur={id:'kbd',name:'プレイヤー',left:1};startPlay(true);
 });
-for(const [id,k] of [['move-x','x'],['move-z','z']]){
-  const button=$(id);let held=false;
-  button.addEventListener('pointerdown',e=>{if(button.disabled)return;e.preventDefault();button.setPointerCapture(e.pointerId);held=true;press(k);});
-  const release=()=>{if(!held)return;held=false;input(k,false,null);};
-  button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',release);
-  button.addEventListener('keydown',e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();held=true;press(k);}});
-  button.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();release();}});
-}
-addEventListener('blur',()=>{if(cur?.id==='kbd'&&(phase==='x'||phase==='z'))input(phase,false,null);setHum(false);});
-controls=installControlSwitch({mount:$('screen-controls'),buttons:[$('move-x'),$('move-z')],
+controls=installControlSwitch({mount:$('screen-controls'),buttons:[],
   getState:()=>({phase,enabled:cur?.id==='kbd'&&['x','z','free'].includes(phase)}),
   onMode:mode=>{if(cur?.id==='kbd')stickCommand(mode==='stick'?100:111);},
   onVector:(x,z)=>{if(cur?.id==='kbd'){if(phase!=='free')stickCommand(100);stickCommand(101+(x+1)+(z+1)*3);}},
   onGrab:()=>{if(cur?.id==='kbd')stickCommand(110);},
-  onDown:k=>{if(cur?.id!=='kbd'||phase!==k)return false;press(k);return true;},
-  onUp:k=>{if(cur?.id==='kbd')input(k,false,null);},
+
 });
 async function openRoom(){
   if(connecting||net)return;
@@ -498,7 +477,7 @@ if(!MODEL_PREVIEW)openRoom();
 
 if (TEST) window.__crane = {
   get state() { return { phase, cur, crane: { ...crane }, last, prizes: prizes.map((p) => ({ name: p.def.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), r: p.r })) }; },
-  press, release: (k, dur) => input(k, false, dur ?? null),
+  command: stickCommand,
   moveTo(x, z) { crane.x = x; crane.z = z; },
   // テスト用：描画を待たずに ゲームの時間を sec 秒すすめる
   async tick(sec) { manual = true; for (let t = 0; t < sec; t += 1 / 30) { update(1 / 30); await new Promise((r) => setTimeout(r, 0)); } },

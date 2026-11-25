@@ -11,13 +11,10 @@ let lastSeen=read(sessionStorage,'hachi-result-'+room,'');
 const sessionKey='hachi-joined-'+room;
 $('room-label').textContent=room?'部屋 '+room:'';
 $('name').value=read(localStorage,'hachi-name','');
-function error(e){console.error(e);$('connection-message').textContent='接続できませんでした。通信を確認して「もう一度つなぐ」を押してください。';stopped=true;show('unavailable');$('right').disabled=$('back').disabled=true;}
+function error(e){console.error(e);$('connection-message').textContent='接続できませんでした。通信を確認して「もう一度つなぐ」を押してください。';stopped=true;show('unavailable');}
 function render(){
   if(stopped)return;
   if(!data || Date.now()-data.t>150000){show('unavailable');return;}
-  if(holding && (data.phase!==holding.k || data.turn!==holding.turn)){
-    $(holding.k==='x'?'right':'back').classList.remove('held');holding=null;
-  }
   const saved=read(sessionStorage,sessionKey,null);
   joined=!!(saved && saved.uid===net?.uid && saved.epoch===data.epoch);
   if(!joined){show('join-view');return;}
@@ -37,9 +34,6 @@ function render(){
     show('play-view');
     $('instruction').textContent=data.phase==='free'?'自由に動かそう':data.phase==='x'?'① よこに動かそう':data.phase==='z'?'② おくに動かそう':'つかめるかな…？';
     $('remaining').textContent='のこり '+data.cur.left+' 回';
-    const locked=sentTurn===data.turn+':'+data.phase;
-    $('right').disabled=!navigator.onLine || data.phase!=='x' || locked;
-    $('back').disabled=!navigator.onLine || data.phase!=='z' || locked;
     controls?.sync();
     if(controls?.getMode()==='stick'&&data.phase==='x'&&sentTurn!==data.turn+':mode'){sentTurn=data.turn+':mode';sendStick(100);}
   }else if(position>=0 || !seen){
@@ -63,41 +57,16 @@ $('join-form').addEventListener('submit',e=>{e.preventDefault();join();});
 $('again').addEventListener('click',join);
 $('retry').addEventListener('click',()=>location.reload());
 $('leave').addEventListener('click',async()=>{if(!net)return;try{await net.removePlayer(net.uid);sessionStorage.removeItem(sessionKey);joined=false;seen=false;render();}catch(e){error(e);}});
-function release(){
-  if(!holding)return;
-  const h=holding;holding=null;$(h.k==='x'?'right':'back').classList.remove('held');
-  sentTurn=h.turn+':'+h.k;
-  const dur=Math.min(10000,Math.max(0,Math.round(performance.now()-h.start)));
-  net.setPlayer({ev:{n:++sequence,k:h.k,down:false,dur,turn:h.turn}}).catch(error);render();
-}
-function beginHold(k){
-  const button=$(k==='x'?'right':'back');
-  if(holding||button.disabled||!net||!data)return false;
-  holding={k,start:performance.now(),turn:data.turn};button.classList.add('held');navigator.vibrate?.(25);
-  net.setPlayer({ev:{n:++sequence,k,down:true,dur:0,turn:data.turn}}).catch(error);
-  return true;
-}
-for(const [id,k] of [['right','x'],['back','z']]){
-  const button=$(id);const down=()=>beginHold(k);
-  button.addEventListener('pointerdown',e=>{e.preventDefault();if(button.disabled)return;button.setPointerCapture(e.pointerId);down();});
-  for(const type of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(type,release);
-  button.addEventListener('keydown',e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();down();}});
-  button.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();release();}});
-  button.addEventListener('contextmenu',e=>e.preventDefault());
-}
 let stickVector={x:0,z:0};
 function sendStick(code){if(!net||!data||data.cur?.id!==net.uid)return;net.setPlayer({ev:{n:++sequence,k:'x',down:true,dur:code,turn:data.turn}}).catch(error);}
 setInterval(()=>{if(controls?.getMode()==='stick'&&data?.phase==='free'&&(stickVector.x||stickVector.z))sendStick(101+(stickVector.x+1)+(stickVector.z+1)*3);},1000);
-controls=installControlSwitch({mount:$('controller-controls'),buttons:[$('right'),$('back')],
+controls=installControlSwitch({mount:$('controller-controls'),buttons:[],
   getState:()=>({phase:data?.phase,enabled:!!(net&&data&&data.cur?.id===net.uid&&navigator.onLine&&!stopped&&sentTurn!==data.turn+':'+data.phase&&['x','z','free'].includes(data.phase))}),
-  onDown:beginHold,onUp:release,
   onMode:mode=>sendStick(mode==='stick'?100:111),
   onVector:(x,z)=>{stickVector={x,z};sendStick(101+(x+1)+(z+1)*3);},
   onGrab:()=>sendStick(110),
 });
-addEventListener('blur',release);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)release();});
-addEventListener('offline',()=>{$('connection-message').textContent='通信が切れています。つなぎ直しています…';release();render();});
+addEventListener('offline',()=>{$('connection-message').textContent='通信が切れています。つなぎ直しています…';render();});
 addEventListener('online',()=>{$('connection-message').textContent='';render();});
 if(!room){show('unavailable');$('retry').hidden=true;}
 else connectRoom(room,'controller',error).then(n=>{
